@@ -78,8 +78,8 @@ def run_audit_mode():
     keywords = get_watch_keywords()
     logger.info(f"📋 关注关键词: {keywords}")
     
-    # 采集新闻
-    news_list = fetcher.fetch(keywords=keywords, limit=50)
+    # 采集新闻 (不传递 keywords 参数,使用默认方式)
+    news_list = fetcher.fetch(limit=50)
     logger.info(f"📰 采集到 {len(news_list)} 条新闻")
     
     # 审计新闻
