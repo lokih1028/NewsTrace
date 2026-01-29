@@ -1,0 +1,36 @@
+# NewsTrace 核心依赖
+# 精简版 - 仅保留必要依赖
+
+# Web框架
+fastapi
+uvicorn[standard]
+streamlit
+
+# 数据库
+sqlalchemy
+
+# AI/LLM (按需安装)
+openai
+google-generativeai
+tiktoken
+
+# 数据源
+akshare
+
+# 数据处理
+pandas
+numpy
+
+# 配置
+pyyaml
+python-dotenv
+
+# 工具
+requests
+python-dateutil
+
+# 认证
+python-jose[cryptography]
+
+# 测试
+pytest

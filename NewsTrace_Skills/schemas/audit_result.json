@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NewsTrace Audit Result Schema",
+  "description": "NewsTrace AI语义审计结果的标准输出格式",
+  "type": "object",
+  "required": ["audit_result", "recommended_tickers"],
+  "properties": {
+    "audit_result": {
+      "type": "object",
+      "description": "审计结果主体",
+      "required": ["score", "risk_level", "warnings"],
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "逻辑公信力评分,0-100分"
+        },
+        "risk_level": {
+          "type": "string",
+          "enum": ["High", "Medium", "Low"],
+          "description": "风险等级: High(高风险), Medium(中风险), Low(低风险)"
+        },
+        "warnings": {
+          "type": "array",
+          "description": "风险警告列表",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 0
+        },
+        "semantic_deviations": {
+          "type": "array",
+          "description": "语义偏离详情",
+          "items": {
+            "type": "object",
+            "required": ["type", "original", "translated", "impact"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["情绪化修饰", "逻辑阉割", "建议变要求", "煽动性表达"],
+                "description": "偏离类型"
+              },
+              "original": {
+                "type": "string",
+                "description": "原文表述"
+              },
+              "translated": {
+                "type": "string",
+                "description": "译文表述"
+              },
+              "impact": {
+                "type": "string",
+                "description": "对投资决策的影响"
+              }
+            }
+          }
+        }
+      }
+    },
+    "recommended_tickers": {
+      "type": "array",
+      "description": "推荐标的列表",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["code", "name", "logic"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^\\d{6}\\.(SH|SZ)$",
+            "description": "股票代码,格式: 6位数字.SH或SZ,例如: 600519.SH"
+          },
+          "name": {
+            "type": "string",
+            "description": "股票名称,例如: 贵州茅台"
+          },
+          "logic": {
+            "type": "string",
+            "minLength": 10,
+            "description": "推荐逻辑,必须具体说明推荐理由,不能只是简单的'受利好影响'"
+          },
+          "beta": {
+            "type": "string",
+            "enum": ["高贝塔", "低贝塔"],
+            "description": "波动属性: 高贝塔(波动大,弹性高) 或 低贝塔(波动小,稳健型)"
+          }
+        }
+      }
+    }
+  }
+}

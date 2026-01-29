@@ -1,0 +1,110 @@
+name: 📊 NewsTrace 每日分析
+
+on:
+  # 定时触发 - 每个工作日 18:00 (北京时间)
+  schedule:
+    - cron: '0 10 * * 1-5'  # UTC 10:00 = 北京 18:00
+  
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '运行模式'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full      # 完整分析
+          - audit     # 仅审计
+          - tracking  # 仅追踪更新
+
+env:
+  PYTHON_VERSION: '3.11'
+  TZ: 'Asia/Shanghai'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 🐍 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 🔧 配置环境
+        run: |
+          # 创建数据目录
+          mkdir -p data
+          
+          # 如果有历史数据,恢复
+          if [ -f "data/newstrace.db" ]; then
+            echo "✅ 发现历史数据库"
+          else
+            echo "📝 初始化新数据库"
+          fi
+      
+      - name: 🚀 运行分析
+        env:
+          # LLM 配置 (Gemini 免费)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LLM_PROVIDER: gemini
+          
+          # 备选 OpenAI 兼容 API
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          
+          # 数据源
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          
+          # 通知渠道
+          WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          
+          # 运行模式
+          RUN_MODE: ${{ github.event.inputs.mode || 'full' }}
+          
+          # 关注清单
+          WATCH_KEYWORDS: ${{ secrets.WATCH_KEYWORDS }}
+        run: |
+          python run_actions.py
+      
+      - name: 💾 保存数据
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newstrace-data-${{ github.run_number }}
+          path: |
+            data/newstrace.db
+            data/reports/
+          retention-days: 30
+      
+      - name: 📊 生成报告摘要
+        if: success()
+        run: |
+          echo "## 📊 NewsTrace 分析完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 运行时间: $(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_STEP_SUMMARY
+          echo "- 运行模式: ${{ github.event.inputs.mode || 'full' }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "data/summary.json" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 分析结果" >> $GITHUB_STEP_SUMMARY
+            cat data/summary.json >> $GITHUB_STEP_SUMMARY
+          fi

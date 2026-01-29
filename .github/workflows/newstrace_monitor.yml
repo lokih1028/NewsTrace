@@ -1,0 +1,41 @@
+name: NewsTrace 实时监控
+
+on:
+  schedule:
+    # 每小时运行一次(交易时段)
+    - cron: '0 1-8 * * 1-5'  # UTC 01:00-08:00 = 北京 09:00-16:00
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run NewsTrace
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          WATCH_KEYWORDS: ${{ secrets.WATCH_KEYWORDS }}
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+        run: |
+          # 增加 --mode=single_run 参数以支持单次运行
+          python main.py --mode=single_run
+      
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: error-logs
+          path: logs/

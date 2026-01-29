@@ -1,0 +1,41 @@
+# LLM配置
+llm:
+  provider: "openai"  # openai / anthropic
+  model: "gpt-4o"
+  api_key: "${OPENAI_API_KEY}"
+  temperature: 0.3
+  max_tokens: 2000
+  
+# 数据源配置
+data_source:
+  provider: "tushare"  # tushare / akshare
+  api_key: "${TUSHARE_TOKEN}"
+  
+# 追踪配置
+tracking:
+  duration_days: 7
+  update_time: "15:30"  # A股收盘后30分钟
+  timezone: "Asia/Shanghai"
+  
+# 数据库配置
+database:
+  type: "postgresql"
+  host: "${DB_HOST:localhost}"
+  port: 5432
+  database: "newstrace"
+  username: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  
+# 风险阈值
+risk_thresholds:
+  high_risk_score: 50
+  medium_risk_score: 70
+  rumor_rate_blacklist: 0.30
+  
+# 推荐配置
+recommendation:
+  max_tickers_per_news: 3
+  min_logic_score: 40
+  
+# 采集配置
+fetch_interval: 3600  # 秒
