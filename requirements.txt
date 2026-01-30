@@ -9,9 +9,9 @@ streamlit
 # 数据库
 sqlalchemy
 
-# AI/LLM (按需安装)
+# AI/LLM (使用 OpenAI SDK 调用 Gemini 和 OpenAI)
 openai
-google-genai  # 新版 SDK, 替代废弃的 google-generativeai
+# google-genai 不再需要 - 使用 OpenAI 兼容模式
 tiktoken
 
 # 数据源

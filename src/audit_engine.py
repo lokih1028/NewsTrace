@@ -71,16 +71,18 @@ class AuditEngine:
                 self.client = None
                 
         elif self.provider == 'gemini':
+            # 使用 OpenAI 兼容模式调用 Gemini API (最稳定的方式)
+            # 文档: https://ai.google.dev/gemini-api/docs/openai
             try:
-                from .llm_provider import GeminiProvider
-                self.client = GeminiProvider(
+                from openai import OpenAI
+                self.client = OpenAI(
                     api_key=self.api_key,
-                    model=self.model,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    thinking_level=self.thinking_level
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
                 )
-                logger.info("Gemini客户端初始化成功")
+                logger.info(f"Gemini客户端初始化成功 (OpenAI兼容模式): {self.model}")
+            except ImportError:
+                logger.error("OpenAI SDK未安装,请运行: pip install openai")
+                self.client = None
             except Exception as e:
                 logger.error(f"Gemini初始化失败: {e}")
                 self.client = None
@@ -324,18 +326,25 @@ class AuditEngine:
                     return result
                     
                 elif self.provider == 'gemini':
-                    from .llm_provider import GeminiProvider
-                    if isinstance(self.client, GeminiProvider):
-                        response = self.client.generate(prompt)
-                        content = response.content
-                        
-                        # 记录原始响应 (截取前500字符)
-                        logger.info(f"[Gemini原始响应] 长度={len(content)}, 内容: {content[:500]}...")
-                        
-                        # 使用增强的 JSON 解析方法
-                        result = self._parse_gemini_response(content)
-                        logger.info(f"[JSON解析] 成功!")
-                        return result
+                    # 使用 OpenAI 兼容模式 (与 OpenAI 调用方式完全相同)
+                    logger.info(f"[Gemini API] 调用模型: {self.model}")
+                    
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": "你是一个专业的金融新闻审计专家。请以 JSON 格式返回分析结果。"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                        response_format={"type": "json_object"}
+                    )
+                    
+                    content = response.choices[0].message.content
+                    logger.info(f"[Gemini API] 响应成功, 长度: {len(content) if content else 0}")
+                    
+                    result = json.loads(content)
+                    return result
                     
             except json.JSONDecodeError as e:
                 logger.error(f"JSON解析失败 (尝试 {attempt + 1}/{max_retries}): {e}")
