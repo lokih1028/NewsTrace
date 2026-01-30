@@ -262,15 +262,14 @@ class GeminiProvider(BaseLLMProvider):
             return self._generate_rest(prompt, **kwargs)
         
         try:
-            # 准备生成配置
+            # 准备生成配置 (注意: thinking_level 需要特定 SDK 版本支持)
             gen_config = {
                 "temperature": kwargs.get("temperature", self.temperature),
                 "max_output_tokens": kwargs.get("max_tokens", self.max_tokens)
             }
             
-            # 如果是 Gemini 3 模型,支持 thinking_level
-            if "gemini-3" in self.model:
-                gen_config["thinking_level"] = kwargs.get("thinking_level", self.thinking_level)
+            # 注意: thinking_level 参数需要 google-genai SDK (而非 google-generativeai)
+            # 当前暂时禁用,确保基础功能正常
 
             response = self.client.generate_content(
                 prompt,
