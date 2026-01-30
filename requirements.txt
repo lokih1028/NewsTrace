@@ -11,7 +11,7 @@ sqlalchemy
 
 # AI/LLM (按需安装)
 openai
-google-generativeai
+google-genai  # 新版 SDK, 替代废弃的 google-generativeai
 tiktoken
 
 # 数据源

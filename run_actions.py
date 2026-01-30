@@ -64,7 +64,7 @@ def run_audit_mode():
     provider = os.getenv("LLM_PROVIDER", "gemini")
     audit_config = {
         "provider": provider,
-        "model": os.getenv("LLM_MODEL", "gemini-3-flash-preview" if provider == "gemini" else "gpt-4o"),
+        "model": os.getenv("LLM_MODEL", "gemini-2.0-flash" if provider == "gemini" else "gpt-4o"),
         "api_key": os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
     }
     

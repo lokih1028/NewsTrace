@@ -216,7 +216,10 @@ class OllamaProvider(BaseLLMProvider):
 
 class GeminiProvider(BaseLLMProvider):
     """
-    Google Gemini 提供商 (免费额度)
+    Google Gemini 提供商 (新版 google-genai SDK)
+    
+    文档: https://ai.google.dev/gemini-api/docs
+    迁移指南: https://ai.google.dev/gemini-api/docs/migrate
     
     免费额度:
     - 60 QPM (每分钟请求数)
@@ -228,7 +231,7 @@ class GeminiProvider(BaseLLMProvider):
     def __init__(
         self,
         api_key: str = None,
-        model: str = "gemini-3-flash-preview",
+        model: str = "gemini-2.0-flash",  # 使用稳定版本
         temperature: float = 0.3,
         max_tokens: int = 2000,
         thinking_level: str = "low"  # 新增: Gemini 3 思考等级 (high/low)
@@ -246,42 +249,54 @@ class GeminiProvider(BaseLLMProvider):
             self._init_client()
     
     def _init_client(self):
+        """初始化新版 google-genai SDK 客户端"""
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
-            self.client = genai.GenerativeModel(self.model)
-            logger.info(f"Gemini 提供商初始化成功: {self.model}")
-        except ImportError:
-            logger.warning("google-generativeai 未安装,尝试使用 REST API")
+            from google import genai
+            # 新版 SDK 使用 Client 对象
+            self.client = genai.Client(api_key=self.api_key)
+            logger.info(f"Gemini 提供商初始化成功 (新版SDK): {self.model}")
+        except ImportError as e:
+            logger.warning(f"google-genai SDK 未安装, 使用 REST API: {e}")
+            logger.info("请运行: pip install google-genai")
             self.client = "REST"
         except Exception as e:
             logger.error(f"Gemini 初始化失败: {e}")
+            self.client = None
     
     def generate(self, prompt: str, **kwargs) -> LLMResponse:
+        """使用新版 SDK 生成内容"""
         if self.client == "REST" or self.client is None:
             return self._generate_rest(prompt, **kwargs)
         
         try:
-            # 准备生成配置 (注意: thinking_level 需要特定 SDK 版本支持)
-            gen_config = {
-                "temperature": kwargs.get("temperature", self.temperature),
-                "max_output_tokens": kwargs.get("max_tokens", self.max_tokens)
-            }
+            from google.genai import types
             
-            # 注意: thinking_level 参数需要 google-genai SDK (而非 google-generativeai)
-            # 当前暂时禁用,确保基础功能正常
-
-            response = self.client.generate_content(
-                prompt,
-                generation_config=gen_config
+            # 构建生成配置
+            config = types.GenerateContentConfig(
+                temperature=kwargs.get("temperature", self.temperature),
+                max_output_tokens=kwargs.get("max_tokens", self.max_tokens),
             )
             
-            # 估算 Token 数 (Gemini API 不直接返回)
+            logger.info(f"[Gemini API] 调用模型: {self.model}, Prompt长度: {len(prompt)}")
+            
+            # 使用新版 API 调用
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=config
+            )
+            
+            # 获取响应文本
+            content = response.text
+            
+            # 估算 Token 数
             input_tokens = len(prompt) // 4
-            output_tokens = len(response.text) // 4
+            output_tokens = len(content) // 4 if content else 0
+            
+            logger.info(f"[Gemini API] 响应成功, 长度: {len(content) if content else 0}")
             
             return LLMResponse(
-                content=response.text,
+                content=content,
                 model=self.model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -290,7 +305,9 @@ class GeminiProvider(BaseLLMProvider):
             )
         except Exception as e:
             logger.error(f"Gemini 生成失败: {e}")
-            raise
+            # 尝试 REST API 作为降级
+            logger.info("尝试使用 REST API 降级...")
+            return self._generate_rest(prompt, **kwargs)
     
     def _generate_rest(self, prompt: str, **kwargs) -> LLMResponse:
         """使用 REST API 直接调用 Gemini"""
