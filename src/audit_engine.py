@@ -327,13 +327,40 @@ class AuditEngine:
                     from .llm_provider import GeminiProvider
                     if isinstance(self.client, GeminiProvider):
                         response = self.client.generate(prompt)
-                        # 尝试解析 JSON
                         content = response.content
-                        # 清理可能的 markdown 代码块
+                        
+                        # 增强的 JSON 清理逻辑
+                        content = content.strip()
+                        
+                        # 处理 markdown 代码块
                         if '```json' in content:
-                            content = content.split('```json')[1].split('```')[0].strip()
+                            # 提取 ```json 和 ``` 之间的内容
+                            start = content.find('```json') + 7
+                            end = content.find('```', start)
+                            if end > start:
+                                content = content[start:end].strip()
                         elif '```' in content:
-                            content = content.split('```')[1].split('```')[0].strip()
+                            # 处理没有语言标识的代码块
+                            start = content.find('```') + 3
+                            end = content.find('```', start)
+                            if end > start:
+                                content = content[start:end].strip()
+                        
+                        # 确保内容以 { 开头
+                        if not content.startswith('{'):
+                            # 尝试找到第一个 { 的位置
+                            brace_pos = content.find('{')
+                            if brace_pos != -1:
+                                content = content[brace_pos:]
+                        
+                        # 确保内容以 } 结尾
+                        if not content.endswith('}'):
+                            # 尝试找到最后一个 } 的位置
+                            brace_pos = content.rfind('}')
+                            if brace_pos != -1:
+                                content = content[:brace_pos + 1]
+                        
+                        logger.debug(f"清理后的JSON内容: {content[:200]}...")
                         result = json.loads(content)
                         return result
                     
