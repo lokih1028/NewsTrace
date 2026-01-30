@@ -29,6 +29,7 @@ class AuditEngine:
         self.api_key = config.get('api_key') or os.getenv('OPENAI_API_KEY')
         self.temperature = config.get('temperature', 0.3)
         self.max_tokens = config.get('max_tokens', 2000)
+        self.thinking_level = config.get('thinking_level', 'low')  # 新增: Gemini 3 思考等级
         self.db = db
         
         # 加载提示词模板

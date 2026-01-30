@@ -228,14 +228,16 @@ class GeminiProvider(BaseLLMProvider):
     def __init__(
         self,
         api_key: str = None,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-3-flash-preview",
         temperature: float = 0.3,
-        max_tokens: int = 2000
+        max_tokens: int = 2000,
+        thinking_level: str = "low"  # 新增: Gemini 3 思考等级 (high/low)
     ):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.thinking_level = thinking_level
         self.client = None
         
         if not self.api_key:
@@ -260,12 +262,19 @@ class GeminiProvider(BaseLLMProvider):
             return self._generate_rest(prompt, **kwargs)
         
         try:
+            # 准备生成配置
+            gen_config = {
+                "temperature": kwargs.get("temperature", self.temperature),
+                "max_output_tokens": kwargs.get("max_tokens", self.max_tokens)
+            }
+            
+            # 如果是 Gemini 3 模型,支持 thinking_level
+            if "gemini-3" in self.model:
+                gen_config["thinking_level"] = kwargs.get("thinking_level", self.thinking_level)
+
             response = self.client.generate_content(
                 prompt,
-                generation_config={
-                    "temperature": kwargs.get("temperature", self.temperature),
-                    "max_output_tokens": kwargs.get("max_tokens", self.max_tokens)
-                }
+                generation_config=gen_config
             )
             
             # 估算 Token 数 (Gemini API 不直接返回)
