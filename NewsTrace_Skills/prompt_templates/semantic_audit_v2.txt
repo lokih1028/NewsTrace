@@ -20,28 +20,28 @@
 
 请务必返回以下 JSON 格式,不要包含任何其他文字:
 
-{
-  "audit_result": {
+{{
+  "audit_result": {{
     "score": 0-100的整数,
     "risk_level": "High|Medium|Low",
     "one_sentence_conclusion": "30字以内,直接告诉投资者该做什么",
     "detected_features": ["hype_language", "policy_demand", "logical_rigor", "data_support", "uncertainty"],
     "warnings": ["警告1", "警告2"],
-    "action_advice": {
+    "action_advice": {{
       "short_term": "1-3日操作建议",
       "medium_term": "1-2周操作建议",
       "stop_loss": "建议止损条件或风险触发点"
-    }
-  },
+    }}
+  }},
   "recommended_tickers": [
-    {
+    {{
       "code": "股票代码",
       "name": "股票名称",
       "logic": "推荐逻辑(必须引用新闻中的具体证据)",
       "confidence": "高|中|低"
-    }
+    }}
   ]
-}
+}}
 
 ## 动态审计指令 (基于市场反馈)
 {dynamic_instruction}
