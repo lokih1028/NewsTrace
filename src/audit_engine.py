@@ -329,39 +329,48 @@ class AuditEngine:
                         response = self.client.generate(prompt)
                         content = response.content
                         
+                        # 记录原始响应 (截取前500字符)
+                        logger.info(f"[Gemini原始响应] {content[:500]}...")
+                        
                         # 增强的 JSON 清理逻辑
                         content = content.strip()
                         
                         # 处理 markdown 代码块
                         if '```json' in content:
-                            # 提取 ```json 和 ``` 之间的内容
                             start = content.find('```json') + 7
                             end = content.find('```', start)
                             if end > start:
                                 content = content[start:end].strip()
+                                logger.info(f"[JSON提取-json块] 成功")
                         elif '```' in content:
-                            # 处理没有语言标识的代码块
                             start = content.find('```') + 3
                             end = content.find('```', start)
                             if end > start:
                                 content = content[start:end].strip()
+                                logger.info(f"[JSON提取-代码块] 成功")
                         
                         # 确保内容以 { 开头
                         if not content.startswith('{'):
-                            # 尝试找到第一个 { 的位置
                             brace_pos = content.find('{')
                             if brace_pos != -1:
+                                logger.info(f"[JSON修正] 找到 {{ 在位置 {brace_pos}")
                                 content = content[brace_pos:]
+                            else:
+                                logger.error(f"[JSON错误] 未找到开始括号 {{, 内容: {content[:100]}")
+                                raise ValueError(f"无效的JSON响应: 未找到开始括号")
                         
                         # 确保内容以 } 结尾
                         if not content.endswith('}'):
-                            # 尝试找到最后一个 } 的位置
                             brace_pos = content.rfind('}')
                             if brace_pos != -1:
                                 content = content[:brace_pos + 1]
+                            else:
+                                logger.error(f"[JSON错误] 未找到结束括号 }}")
+                                raise ValueError(f"无效的JSON响应: 未找到结束括号")
                         
-                        logger.debug(f"清理后的JSON内容: {content[:200]}...")
+                        logger.info(f"[JSON解析] 开始解析, 长度: {len(content)}")
                         result = json.loads(content)
+                        logger.info(f"[JSON解析] 成功!")
                         return result
                     
             except json.JSONDecodeError as e:
