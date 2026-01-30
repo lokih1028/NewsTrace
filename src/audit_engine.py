@@ -68,6 +68,20 @@ class AuditEngine:
             except ImportError:
                 logger.error("Anthropic SDK未安装,请运行: pip install anthropic")
                 self.client = None
+                
+        elif self.provider == 'gemini':
+            try:
+                from .llm_provider import GeminiProvider
+                self.client = GeminiProvider(
+                    api_key=self.api_key,
+                    model=self.model,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens
+                )
+                logger.info("Gemini客户端初始化成功")
+            except Exception as e:
+                logger.error(f"Gemini初始化失败: {e}")
+                self.client = None
         else:
             logger.warning(f"未知的LLM提供商: {self.provider}")
             self.client = None
@@ -216,16 +230,18 @@ class AuditEngine:
     
     def _build_prompt(self, news: Dict) -> str:
         """构建提示词(包含动态指令)"""
-        base_prompt = self.prompt_template.format(
-            title=news.get('title', ''),
-            content=news.get('content', '')[:1000],  # 限制长度
-            source=news.get('source', 'Unknown')
-        )
-        
-        # 注入动态审计指令
+        # 先生成动态指令
         dynamic_instruction = self._generate_dynamic_instruction()
         
-        return f"{base_prompt}\n\n{dynamic_instruction}"
+        # 一次性填充所有占位符
+        full_prompt = self.prompt_template.format(
+            title=news.get('title', ''),
+            content=news.get('content', '')[:1000],  # 限制长度
+            source=news.get('source', 'Unknown'),
+            dynamic_instruction=dynamic_instruction
+        )
+        
+        return full_prompt
     
     def _generate_dynamic_instruction(self) -> str:
         """根据当前权重生成动态审计指令"""
@@ -304,6 +320,20 @@ class AuditEngine:
                     content = response.content[0].text
                     result = json.loads(content)
                     return result
+                    
+                elif self.provider == 'gemini':
+                    from .llm_provider import GeminiProvider
+                    if isinstance(self.client, GeminiProvider):
+                        response = self.client.generate(prompt)
+                        # 尝试解析 JSON
+                        content = response.content
+                        # 清理可能的 markdown 代码块
+                        if '```json' in content:
+                            content = content.split('```json')[1].split('```')[0].strip()
+                        elif '```' in content:
+                            content = content.split('```')[1].split('```')[0].strip()
+                        result = json.loads(content)
+                        return result
                     
             except json.JSONDecodeError as e:
                 logger.error(f"JSON解析失败 (尝试 {attempt + 1}/{max_retries}): {e}")

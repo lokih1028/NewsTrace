@@ -61,7 +61,7 @@
     "recommended_tickers": {
       "type": "array",
       "description": "推荐标的列表",
-      "minItems": 1,
+      "minItems": 0,
       "maxItems": 3,
       "items": {
         "type": "object",
@@ -69,8 +69,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "pattern": "^\\d{6}\\.(SH|SZ)$",
-            "description": "股票代码,格式: 6位数字.SH或SZ,例如: 600519.SH"
+            "description": "股票代码,格式: A股(6位数字.SH或SZ,例如600519.SH) 或 港股(5位数字.HK,例如00700.HK)"
           },
           "name": {
             "type": "string",

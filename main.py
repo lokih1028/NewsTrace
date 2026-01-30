@@ -99,18 +99,14 @@ def process_news_item(item):
     except:
         pass
 
-    # 关键词过滤
-    if WATCH_KEYWORDS:
-        is_match = False
-        for keyword in WATCH_KEYWORDS:
-            if keyword in title:
-                is_match = True
-                print(f"🎯 命中关键词: [{keyword}] -> {title}")
-                break
-        if not is_match:
-            seen_news_ids.add(news_id)
-            return
+    # 黑名单过滤 - 只过滤明显无关的新闻
+    BLACKLIST_KEYWORDS = ["娱乐", "体育", "游戏", "明星", "影视", "综艺", "电竞", "赛事", "球员", "演员"]
+    if any(kw in title for kw in BLACKLIST_KEYWORDS):
+        logger.debug(f"⛔ 黑名单过滤: {title}")
+        seen_news_ids.add(news_id)
+        return
 
+    # 所有其他新闻都进入审计流程
     print(f"\n⚡ 发现新情报: {title}")
     
     try:
