@@ -330,46 +330,10 @@ class AuditEngine:
                         content = response.content
                         
                         # 记录原始响应 (截取前500字符)
-                        logger.info(f"[Gemini原始响应] {content[:500]}...")
+                        logger.info(f"[Gemini原始响应] 长度={len(content)}, 内容: {content[:500]}...")
                         
-                        # 增强的 JSON 清理逻辑
-                        content = content.strip()
-                        
-                        # 处理 markdown 代码块
-                        if '```json' in content:
-                            start = content.find('```json') + 7
-                            end = content.find('```', start)
-                            if end > start:
-                                content = content[start:end].strip()
-                                logger.info(f"[JSON提取-json块] 成功")
-                        elif '```' in content:
-                            start = content.find('```') + 3
-                            end = content.find('```', start)
-                            if end > start:
-                                content = content[start:end].strip()
-                                logger.info(f"[JSON提取-代码块] 成功")
-                        
-                        # 确保内容以 { 开头
-                        if not content.startswith('{'):
-                            brace_pos = content.find('{')
-                            if brace_pos != -1:
-                                logger.info(f"[JSON修正] 找到 {{ 在位置 {brace_pos}")
-                                content = content[brace_pos:]
-                            else:
-                                logger.error(f"[JSON错误] 未找到开始括号 {{, 内容: {content[:100]}")
-                                raise ValueError(f"无效的JSON响应: 未找到开始括号")
-                        
-                        # 确保内容以 } 结尾
-                        if not content.endswith('}'):
-                            brace_pos = content.rfind('}')
-                            if brace_pos != -1:
-                                content = content[:brace_pos + 1]
-                            else:
-                                logger.error(f"[JSON错误] 未找到结束括号 }}")
-                                raise ValueError(f"无效的JSON响应: 未找到结束括号")
-                        
-                        logger.info(f"[JSON解析] 开始解析, 长度: {len(content)}")
-                        result = json.loads(content)
+                        # 使用增强的 JSON 解析方法
+                        result = self._parse_gemini_response(content)
                         logger.info(f"[JSON解析] 成功!")
                         return result
                     
@@ -384,6 +348,71 @@ class AuditEngine:
                     raise
         
         raise Exception("LLM调用失败,已达到最大重试次数")
+    
+    def _parse_gemini_response(self, response_text: str) -> Dict:
+        """
+        解析 Gemini 响应 (参考 daily_stock_analysis 项目实现)
+        
+        尝试从响应中提取 JSON，包含多种容错处理
+        """
+        import re
+        
+        try:
+            # 清理响应文本：移除 markdown 代码块标记
+            cleaned_text = response_text.strip()
+            
+            if '```json' in cleaned_text:
+                cleaned_text = cleaned_text.replace('```json', '').replace('```', '')
+            elif '```' in cleaned_text:
+                cleaned_text = cleaned_text.replace('```', '')
+            
+            cleaned_text = cleaned_text.strip()
+            
+            # 尝试找到 JSON 内容
+            json_start = cleaned_text.find('{')
+            json_end = cleaned_text.rfind('}') + 1
+            
+            if json_start >= 0 and json_end > json_start:
+                json_str = cleaned_text[json_start:json_end]
+                
+                # 修复常见的 JSON 问题
+                json_str = self._fix_json_string(json_str)
+                
+                logger.info(f"[JSON解析] 提取内容长度: {len(json_str)}")
+                data = json.loads(json_str)
+                return data
+            else:
+                # 没有找到 JSON
+                logger.warning(f"[JSON解析] 未找到 JSON 结构, 返回默认结果")
+                logger.debug(f"原始响应: {response_text[:200]}")
+                return self._get_fallback_result()
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"[JSON解析] 解析失败: {e}")
+            logger.debug(f"尝试解析的内容: {response_text[:500]}")
+            raise
+    
+    def _fix_json_string(self, json_str: str) -> str:
+        """
+        修复常见的 JSON 格式问题 (参考 daily_stock_analysis 项目)
+        """
+        import re
+        
+        # 移除 JavaScript 风格的注释
+        json_str = re.sub(r'//.*?\n', '\n', json_str)
+        json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
+        
+        # 修复尾随逗号 (JSON 不允许)
+        json_str = re.sub(r',\s*}', '}', json_str)
+        json_str = re.sub(r',\s*]', ']', json_str)
+        
+        # 确保布尔值是小写 (Python True/False 转 JSON true/false)
+        json_str = json_str.replace('True', 'true').replace('False', 'false')
+        
+        # 移除可能的 BOM 或其他控制字符
+        json_str = json_str.strip('\ufeff\u200b\u200c\u200d')
+        
+        return json_str
     
     def _validate_result(self, result: Dict) -> Dict:
         """
