@@ -89,6 +89,8 @@ def run_audit_mode():
     for news in news_list:
         try:
             result = auditor.audit(news)
+            # 将新闻标题存入结果中以便在报告中显示
+            result['_news_title'] = news.get('title', '未知标题')
             results.append(result)
             
             # 修复: 正确访问审计结果结构
@@ -110,10 +112,13 @@ def run_audit_mode():
     # 修复: 始终生成报告,不管是否有高风险新闻
     report = generate_daily_report(results, high_risk_news)
     
-    # 推送通知 (只在有高风险新闻时推送)
-    if high_risk_news and notifier.is_available():
+    # 始终推送日报 (包含分析结果概览)
+    if notifier.is_available():
         notifier.send(f"📊 NewsTrace 日报 {datetime.now().strftime('%Y-%m-%d')}", report)
-        logger.info(f"📤 已推送通知: {len(high_risk_news)} 条高风险新闻")
+        if high_risk_news:
+            logger.info(f"📤 已推送通知: {len(high_risk_news)} 条高风险新闻")
+        else:
+            logger.info("📤 已推送日报 (今日无高风险新闻)")
     
     # 保存报告 (始终保存)
     report_path = f"data/reports/daily_{datetime.now().strftime('%Y%m%d')}.md"
@@ -182,6 +187,8 @@ def generate_daily_report(results, high_risk_news):
         audit_result = result.get("audit_result", {})
         risk_level = audit_result.get("risk_level", "Medium")
         score = audit_result.get("score", 50)
+        title = result.get("_news_title", "未知标题")[:40]
+        conclusion = audit_result.get("one_sentence_conclusion", "")[:50]
         
         # 风险等级图标
         if risk_level in ["High", "high", "Critical", "critical"]:
@@ -191,7 +198,10 @@ def generate_daily_report(results, high_risk_news):
         else:
             emoji = "🟢"
         
-        report_lines.append(f"{i}. {emoji} 风险: {risk_level} | 评分: {score}")
+        report_lines.append(f"{i}. {emoji} **{title}**")
+        report_lines.append(f"   - 风险: {risk_level} | 评分: {score}")
+        if conclusion:
+            report_lines.append(f"   - 💡 {conclusion}")
     
     report_lines.extend([
         f"",
