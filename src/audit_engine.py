@@ -200,10 +200,7 @@ class AuditEngine:
         Returns:
             审计结果字典
         """
-        # === 诊断日志 ===
-        logger.info(f"[诊断] audit() 开始 - 标题: {news.get('title', '')[:50]}")
-        logger.info(f"[诊断] provider={self.provider}, model={self.model}")
-        logger.info(f"[诊断] client类型={type(self.client).__name__}, client是否为None={self.client is None}")
+        logger.debug(f"审计新闻: {news.get('title', '')[:50]}")
         
         if self.client is None:
             logger.error("LLM客户端未初始化")
@@ -298,15 +295,9 @@ class AuditEngine:
         Returns:
             解析后的JSON结果
         """
-        # === 诊断日志 ===
-        logger.info(f"[诊断] _call_llm() 开始 - prompt长度: {len(prompt)}")
-        logger.info(f"[诊断] provider='{self.provider}', max_retries={max_retries}")
-        
         for attempt in range(max_retries):
-            logger.info(f"[诊断] 尝试 {attempt+1}/{max_retries}, provider='{self.provider}'")
             try:
                 if self.provider == 'openai':
-                    logger.info("[诊断] 进入 openai 分支")
                     response = self.client.chat.completions.create(
                         model=self.model,
                         messages=[
@@ -337,9 +328,8 @@ class AuditEngine:
                     return result
                     
                 elif self.provider == 'gemini':
-                    logger.info("[诊断] 进入 gemini 分支")
-                    # 使用 OpenAI 兼容模式 (与 OpenAI 调用方式完全相同)
-                    logger.info(f"[Gemini API] 调用模型: {self.model}")
+                    # 使用 OpenAI 兼容模式
+                    logger.info(f"[Gemini] 调用模型: {self.model}")
                     
                     response = self.client.chat.completions.create(
                         model=self.model,
