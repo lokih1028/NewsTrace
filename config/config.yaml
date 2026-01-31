@@ -3,7 +3,7 @@ llm:
   provider: "openai"  # openai / anthropic
   model: "gpt-4o"
   api_key: "${OPENAI_API_KEY}"
-  temperature: 0.3
+  temperature: 0.5  # 提高到0.5增加输出多样性 (会自动加入±0.1随机波动)
   max_tokens: 2000
   
 # 数据源配置

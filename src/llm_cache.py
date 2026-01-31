@@ -52,10 +52,13 @@ class LLMCache:
             self.redis_client = None
     
     def _get_cache_key(self, news_title: str, news_content: str = "") -> str:
-        """生成缓存键"""
-        # 使用标题和内容的前200字符生成哈希
+        """生成缓存键（包含时间维度）"""
+        import datetime
+        # 使用日期+小时作为时间盐，同一天同一小时内的相同新闻才命中缓存
+        # 这样可以保证不同时间段对同一新闻产生不同的分析结果
+        time_salt = datetime.datetime.now().strftime("%Y%m%d%H")
         content_hash = hashlib.md5(
-            f"{news_title}:{news_content[:200]}".encode()
+            f"{news_title}:{news_content[:200]}:{time_salt}".encode()
         ).hexdigest()
         return f"llm:audit:{content_hash}"
     

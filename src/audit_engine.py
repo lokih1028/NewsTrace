@@ -4,6 +4,8 @@ AI审计引擎
 """
 import logging
 import json
+import random
+import datetime
 from typing import Dict
 import os
 
@@ -27,7 +29,7 @@ class AuditEngine:
         self.provider = config.get('provider', 'openai')
         self.model = config.get('model', 'gpt-4o')
         self.api_key = config.get('api_key') or os.getenv('OPENAI_API_KEY')
-        self.temperature = config.get('temperature', 0.3)
+        # 方案2: 提高基础 temperature 并引入随机波动增加输出多样性\r\n        base_temp = config.get('temperature', 0.5)\r\n        self.temperature = base_temp + random.uniform(-0.1, 0.1)
         self.max_tokens = config.get('max_tokens', 2000)
         self.thinking_level = config.get('thinking_level', 'low')  # 新增: Gemini 3 思考等级
         self.db = db
@@ -235,24 +237,61 @@ class AuditEngine:
             return self._get_fallback_result()
     
     def _build_prompt(self, news: Dict) -> str:
-        """构建提示词(包含动态指令)"""
+        """构建提示词(包含动态指令和时间上下文)"""
         # 先生成动态指令
         dynamic_instruction = self._generate_dynamic_instruction()
+        
+        # 方案4: 注入时间上下文
+        current_date = datetime.datetime.now().strftime("%Y年%m月%d日 %H:%M")
+        market_context = self._get_market_context()
         
         # 一次性填充所有占位符
         full_prompt = self.prompt_template.format(
             title=news.get('title', ''),
             content=news.get('content', '')[:1000],  # 限制长度
             source=news.get('source', 'Unknown'),
-            dynamic_instruction=dynamic_instruction
+            dynamic_instruction=dynamic_instruction,
+            current_date=current_date,
+            market_context=market_context
         )
         
         return full_prompt
+    
+    def _get_market_context(self) -> str:
+        """
+        获取当前市场上下文描述
+        方案4: 增加输出多样性，可后续对接实时行情API
+        """
+        # 随机选择市场描述模板，增加输出多样性
+        templates = [
+            "市场整体情绪偏谨慎，关注政策面变化",
+            "A股震荡调整中，资金偏好防御型板块",
+            "市场活跃度提升，题材轮动加快",
+            "观望情绪浓厚，等待财报季催化",
+            "外围市场波动加剧，避险情绪上升",
+            "成交量萎缩，市场等待方向选择",
+            "热点板块轮动快速，短线机会为主",
+            "资金面相对宽松，关注政策边际变化"
+        ]
+        return random.choice(templates)
     
     def _generate_dynamic_instruction(self) -> str:
         """根据当前权重生成动态审计指令"""
         instructions = ["### 动态审计指令 (基于市场反馈):"]
         w = self.dynamic_weights
+        
+        # 方案5: 随机选择本次审计的特别关注点
+        special_focus_options = [
+            "⚡ 本次审计特别关注：新闻来源的权威性和历史准确率",
+            "⚡ 本次审计特别关注：时间敏感性——这条新闻的时效窗口有多长？",
+            "⚡ 本次审计特别关注：逆向思维——如果这条新闻是利空而非利好呢？",
+            "⚡ 本次审计特别关注：板块联动——哪些相关板块可能受到波及？",
+            "⚡ 本次审计特别关注：情绪指标——市场对此类消息的历史反应模式",
+            "⚡ 本次审计特别关注：信息对称性——该消息是否已被市场充分消化？",
+            "⚡ 本次审计特别关注：政策敏感度——监管层可能如何解读此消息？",
+            "⚡ 本次审计特别关注：资金面——该消息对市场流动性有何影响？"
+        ]
+        instructions.append(random.choice(special_focus_options))
         
         # 标题党/夸大表达
         if w.get("hype_language", -20) > -5:
