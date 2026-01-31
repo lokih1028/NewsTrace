@@ -102,9 +102,23 @@ class MarketTracker:
                     self._update_price_snapshot(tracking_id, 'price_t1', 't1_timestamp', current_price)
                     logger.info(f"T+1 快照: {ticker} @ {current_price}")
                     
+                    # 🚨 T+1 回撤预警检测
+                    t0_price = tracking['price_t0']
+                    if t0_price and t0_price > 0:
+                        t1_return = (current_price - t0_price) / t0_price
+                        if t1_return < -0.03:  # 回撤超过 3%
+                            self._trigger_drawdown_alert(tracking, t1_return, current_price)
+                    
                 elif day_offset == 3:
                     self._update_price_snapshot(tracking_id, 'price_t3', 't3_timestamp', current_price)
                     logger.info(f"T+3 快照: {ticker} @ {current_price}")
+                    
+                    # 🚨 T+3 回撤预警检测
+                    t0_price = tracking['price_t0']
+                    if t0_price and t0_price > 0:
+                        t3_return = (current_price - t0_price) / t0_price
+                        if t3_return < -0.05:  # 回撤超过 5%
+                            self._trigger_drawdown_alert(tracking, t3_return, current_price, "T+3严重回撤")
                     
                 elif day_offset == 7:
                     self._update_price_snapshot(tracking_id, 'price_t7', 't7_timestamp', current_price)
@@ -351,3 +365,44 @@ class MarketTracker:
         except Exception as e:
             logger.error(f"获取价格失败: {ticker_code} - {e}")
             return 100.0  # 降级返回模拟价格
+    
+    def _trigger_drawdown_alert(self, tracking: Dict, return_pct: float, 
+                                 current_price: float, alert_type: str = "T+1回撤预警"):
+        """
+        触发回撤预警
+        
+        Args:
+            tracking: 追踪任务信息
+            return_pct: 收益率（负数表示亏损）
+            current_price: 当前价格
+            alert_type: 预警类型
+        """
+        ticker = tracking['ticker']
+        news_id = tracking['news_id']
+        t0_price = tracking['price_t0']
+        
+        # 构建预警消息
+        alert_msg = (
+            f"🚨 [{alert_type}] {ticker}\n"
+            f"买入价: {t0_price:.2f} → 现价: {current_price:.2f}\n"
+            f"收益率: {return_pct:.2%}\n"
+            f"关联新闻ID: {news_id}"
+        )
+        
+        # 记录预警日志
+        logger.warning(alert_msg)
+        
+        # TODO: 对接通知渠道（微信/钉钉/邮件）
+        # 可以调用项目中已有的 MultiChannelNotifier
+        try:
+            from src.notifications import MultiChannelNotifier
+            notifier = MultiChannelNotifier()
+            notifier.send_alert(
+                title=f"⚠️ {alert_type}: {ticker}",
+                content=alert_msg,
+                level="warning"
+            )
+        except Exception as e:
+            logger.debug(f"通知发送失败（可忽略）: {e}")
+        
+        return alert_msg
