@@ -29,7 +29,9 @@ class AuditEngine:
         self.provider = config.get('provider', 'openai')
         self.model = config.get('model', 'gpt-4o')
         self.api_key = config.get('api_key') or os.getenv('OPENAI_API_KEY')
-        # 方案2: 提高基础 temperature 并引入随机波动增加输出多样性\r\n        base_temp = config.get('temperature', 0.5)\r\n        self.temperature = base_temp + random.uniform(-0.1, 0.1)
+        # 方案2: 提高基础 temperature 并引入随机波动增加输出多样性
+        base_temp = config.get('temperature', 0.5)
+        self.temperature = base_temp + random.uniform(-0.1, 0.1)
         self.max_tokens = config.get('max_tokens', 2000)
         self.thinking_level = config.get('thinking_level', 'low')  # 新增: Gemini 3 思考等级
         self.db = db
