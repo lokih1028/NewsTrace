@@ -259,10 +259,81 @@ class AuditEngine:
     
     def _get_market_context(self) -> str:
         """
-        获取当前市场上下文描述
-        方案4: 增加输出多样性，可后续对接实时行情API
+        获取当前市场上下文描述（基于实时行情）
+        使用 AkShare 免费API获取大盘指数实时数据
         """
-        # 随机选择市场描述模板，增加输出多样性
+        try:
+            import akshare as ak
+            
+            # 获取所有指数实时行情
+            df_all = ak.stock_zh_index_spot_sina()
+            
+            if df_all is not None and not df_all.empty:
+                # 过滤上证指数和深证成指
+                df_sh = df_all[df_all['代码'] == 'sh000001']
+                df_sz = df_all[df_all['代码'] == 'sz399001']
+                
+                if not df_sh.empty and not df_sz.empty:
+                    # 解析上证指数数据
+                    sh_price = float(df_sh.iloc[0]['最新价'])
+                    sh_change = float(df_sh.iloc[0]['涨跌幅'])
+                    
+                    # 解析深证成指数据
+                    sz_price = float(df_sz.iloc[0]['最新价'])
+                    sz_change = float(df_sz.iloc[0]['涨跌幅'])
+                    
+                    # 生成市场描述
+                    return self._generate_market_description(sh_price, sh_change, sz_price, sz_change)
+                else:
+                    logger.warning("未找到上证/深证指数数据，使用备用逻辑")
+                    return self._get_fallback_market_context()
+            else:
+                logger.warning("AkShare 返回空数据，使用备用逻辑")
+                return self._get_fallback_market_context()
+                
+        except ImportError:
+            logger.warning("akshare 未安装，使用备用市场描述")
+            return self._get_fallback_market_context()
+        except Exception as e:
+            logger.warning(f"获取实时行情失败: {e}，使用备用市场描述")
+            return self._get_fallback_market_context()
+    
+    def _generate_market_description(self, sh_price: float, sh_change: float, 
+                                     sz_price: float, sz_change: float) -> str:
+        """根据实时行情生成市场描述"""
+        # 计算综合涨跌
+        avg_change = (sh_change + sz_change) / 2
+        
+        # 判断市场情绪
+        if avg_change > 2.0:
+            sentiment = "强势上涨"
+            mood = "乐观情绪高涨，追涨需谨慎"
+        elif avg_change > 0.5:
+            sentiment = "温和上涨"
+            mood = "市场情绪偏暖，可适度参与"
+        elif avg_change > -0.5:
+            sentiment = "震荡整理"
+            mood = "观望氛围浓厚，等待明确信号"
+        elif avg_change > -2.0:
+            sentiment = "小幅调整"
+            mood = "避险情绪抬头，关注防御板块"
+        else:
+            sentiment = "显著下跌"
+            mood = "恐慌情绪蔓延，控制仓位为主"
+        
+        # 格式化描述
+        sh_direction = "↑" if sh_change >= 0 else "↓"
+        sz_direction = "↑" if sz_change >= 0 else "↓"
+        
+        description = (
+            f"A股{sentiment}：上证指数{sh_price:.2f}{sh_direction}{abs(sh_change):.2f}%，"
+            f"深证成指{sz_price:.2f}{sz_direction}{abs(sz_change):.2f}%。{mood}"
+        )
+        
+        return description
+    
+    def _get_fallback_market_context(self) -> str:
+        """备用市场描述（API不可用时）"""
         templates = [
             "市场整体情绪偏谨慎，关注政策面变化",
             "A股震荡调整中，资金偏好防御型板块",
