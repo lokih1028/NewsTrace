@@ -259,37 +259,37 @@ class AuditEngine:
     
     def _get_market_context(self) -> str:
         """
-        获取当前市场上下文描述（基于实时行情）
-        使用 AkShare 免费API获取大盘指数实时数据
+        获取当前市场上下文描述（增强版：大盘+北向资金+涨停比）
+        使用 AkShare 免费API获取多维度市场数据
         """
         try:
             import akshare as ak
             
-            # 获取所有指数实时行情
+            # 1. 获取大盘指数实时行情
             df_all = ak.stock_zh_index_spot_sina()
+            sh_price, sh_change, sz_price, sz_change = 0, 0, 0, 0
             
             if df_all is not None and not df_all.empty:
-                # 过滤上证指数和深证成指
                 df_sh = df_all[df_all['代码'] == 'sh000001']
                 df_sz = df_all[df_all['代码'] == 'sz399001']
                 
                 if not df_sh.empty and not df_sz.empty:
-                    # 解析上证指数数据
                     sh_price = float(df_sh.iloc[0]['最新价'])
                     sh_change = float(df_sh.iloc[0]['涨跌幅'])
-                    
-                    # 解析深证成指数据
                     sz_price = float(df_sz.iloc[0]['最新价'])
                     sz_change = float(df_sz.iloc[0]['涨跌幅'])
-                    
-                    # 生成市场描述
-                    return self._generate_market_description(sh_price, sh_change, sz_price, sz_change)
-                else:
-                    logger.warning("未找到上证/深证指数数据，使用备用逻辑")
-                    return self._get_fallback_market_context()
-            else:
-                logger.warning("AkShare 返回空数据，使用备用逻辑")
-                return self._get_fallback_market_context()
+            
+            # 2. 获取北向资金数据
+            north_flow = self._get_north_flow()
+            
+            # 3. 获取涨停/跌停数据
+            zt_count, dt_count = self._get_limit_count()
+            
+            # 4. 生成综合市场描述
+            return self._generate_market_description(
+                sh_price, sh_change, sz_price, sz_change,
+                north_flow, zt_count, dt_count
+            )
                 
         except ImportError:
             logger.warning("akshare 未安装，使用备用市场描述")
@@ -298,9 +298,60 @@ class AuditEngine:
             logger.warning(f"获取实时行情失败: {e}，使用备用市场描述")
             return self._get_fallback_market_context()
     
+    def _get_north_flow(self) -> float:
+        """获取北向资金净流入（亿元）"""
+        try:
+            import akshare as ak
+            df = ak.stock_hsgt_fund_flow_summary_em()
+            
+            if df is not None and not df.empty:
+                # 筛选北向资金（沪股通+深股通）
+                north_data = df[df['资金方向'] == '北向']
+                if not north_data.empty:
+                    # 获取净流入列（可能是"当日资金流入"或"净流入"）
+                    flow_col = None
+                    for col in ['当日资金流入', '净流入', '资金净流入']:
+                        if col in north_data.columns:
+                            flow_col = col
+                            break
+                    
+                    if flow_col:
+                        total_flow = north_data[flow_col].sum()
+                        return float(total_flow) / 100000000  # 转换为亿元
+            return 0
+        except Exception as e:
+            logger.debug(f"获取北向资金失败: {e}")
+            return 0
+    
+    def _get_limit_count(self) -> tuple:
+        """获取今日涨停/跌停数量"""
+        try:
+            import akshare as ak
+            import datetime
+            
+            today = datetime.datetime.now().strftime('%Y%m%d')
+            
+            # 获取涨停池
+            df_zt = ak.stock_zt_pool_em(date=today)
+            zt_count = len(df_zt) if df_zt is not None else 0
+            
+            # 获取跌停池（可能不可用，降级处理）
+            try:
+                df_dt = ak.stock_zt_pool_dtgc_em(date=today)
+                dt_count = len(df_dt) if df_dt is not None else 0
+            except:
+                dt_count = 0
+            
+            return zt_count, dt_count
+        except Exception as e:
+            logger.debug(f"获取涨跌停数据失败: {e}")
+            return 0, 0
+    
     def _generate_market_description(self, sh_price: float, sh_change: float, 
-                                     sz_price: float, sz_change: float) -> str:
-        """根据实时行情生成市场描述"""
+                                     sz_price: float, sz_change: float,
+                                     north_flow: float = 0, 
+                                     zt_count: int = 0, dt_count: int = 0) -> str:
+        """根据多维度数据生成综合市场描述"""
         # 计算综合涨跌
         avg_change = (sh_change + sz_change) / 2
         
@@ -321,14 +372,26 @@ class AuditEngine:
             sentiment = "显著下跌"
             mood = "恐慌情绪蔓延，控制仓位为主"
         
-        # 格式化描述
+        # 格式化指数
         sh_direction = "↑" if sh_change >= 0 else "↓"
         sz_direction = "↑" if sz_change >= 0 else "↓"
         
-        description = (
-            f"A股{sentiment}：上证指数{sh_price:.2f}{sh_direction}{abs(sh_change):.2f}%，"
-            f"深证成指{sz_price:.2f}{sz_direction}{abs(sz_change):.2f}%。{mood}"
-        )
+        # 基础描述
+        description = f"A股{sentiment}：上证{sh_price:.0f}{sh_direction}{abs(sh_change):.2f}%，深证{sz_price:.0f}{sz_direction}{abs(sz_change):.2f}%"
+        
+        # 北向资金描述
+        if north_flow != 0:
+            flow_direction = "流入" if north_flow > 0 else "流出"
+            description += f"；北向资金净{flow_direction}{abs(north_flow):.1f}亿"
+        
+        # 涨跌停描述
+        if zt_count > 0 or dt_count > 0:
+            description += f"；涨停{zt_count}家"
+            if dt_count > 0:
+                description += f"/跌停{dt_count}家"
+        
+        # 情绪总结
+        description += f"。{mood}"
         
         return description
     
