@@ -262,43 +262,45 @@ class AuditEngine:
     def _get_market_context(self) -> str:
         """
         获取当前市场上下文描述（基于实时行情）
-        使用 AkShare 免费API获取大盘指数实时数据
+        优先使用 Tushare,降级使用随机模板
         """
         try:
-            import akshare as ak
+            # 尝试使用 Tushare 获取指数行情
+            import tushare as ts
+            import os
             
-            # 获取所有指数实时行情
-            df = ak.stock_zh_index_spot_em()
-            
-            if df is not None and not df.empty:
-                # 筛选上证指数（代码: 000001）
-                sh_data = df[df['代码'] == '000001']
-                # 筛选深证成指（代码: 399001）
-                sz_data = df[df['代码'] == '399001']
+            token = os.getenv("TUSHARE_TOKEN")
+            if token:
+                ts.set_token(token)
+                pro = ts.pro_api()
                 
-                if not sh_data.empty and not sz_data.empty:
-                    # 解析上证指数数据
-                    sh_price = float(sh_data.iloc[0]['最新价'])
-                    sh_change = float(sh_data.iloc[0]['涨跌幅'])
+                # 获取今日上证指数和深证成指行情
+                today = datetime.datetime.now().strftime('%Y%m%d')
+                
+                # 上证指数
+                df_sh = pro.index_daily(ts_code='000001.SH', start_date=today, end_date=today)
+                # 深证成指  
+                df_sz = pro.index_daily(ts_code='399001.SZ', start_date=today, end_date=today)
+                
+                if not df_sh.empty and not df_sz.empty:
+                    sh_change = float(df_sh.iloc[0]['pct_chg'])
+                    sh_close = float(df_sh.iloc[0]['close'])
+                    sz_change = float(df_sz.iloc[0]['pct_chg'])
+                    sz_close = float(df_sz.iloc[0]['close'])
                     
-                    # 解析深证成指数据
-                    sz_price = float(sz_data.iloc[0]['最新价'])
-                    sz_change = float(sz_data.iloc[0]['涨跌幅'])
-                    
-                    # 生成市场描述
-                    return self._generate_market_description(sh_price, sh_change, sz_price, sz_change)
+                    return self._generate_market_description(sh_close, sh_change, sz_close, sz_change)
                 else:
-                    logger.warning("未找到上证/深证指数数据，使用备用逻辑")
+                    logger.warning("Tushare 未返回今日数据(可能非交易日),使用备用逻辑")
                     return self._get_fallback_market_context()
             else:
-                logger.warning("AkShare 返回空数据，使用备用逻辑")
+                logger.warning("TUSHARE_TOKEN 未配置,使用备用市场描述")
                 return self._get_fallback_market_context()
                 
         except ImportError:
-            logger.warning("akshare 未安装，使用备用市场描述")
+            logger.warning("tushare 未安装,使用备用市场描述")
             return self._get_fallback_market_context()
         except Exception as e:
-            logger.warning(f"获取实时行情失败: {e}，使用备用市场描述")
+            logger.warning(f"获取实时行情失败: {e},使用备用市场描述")
             return self._get_fallback_market_context()
     
     def _get_north_flow(self) -> float:
