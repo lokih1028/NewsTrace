@@ -146,9 +146,23 @@ def parse_arguments():
 if __name__ == "__main__":
     args = parse_arguments()
     
+    # 初始化权重进化器
+    try:
+        from src.weight_evolver import WeightEvolver
+        import yaml
+        with open('config/config.yaml', 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        weight_evolver = WeightEvolver(db_engine, config)
+        print("✅ 权重进化器初始化完成")
+    except Exception as e:
+        print(f"⚠️ 权重进化器初始化失败（可忽略）: {e}")
+        weight_evolver = None
+    
     print(f"👀 正在监控关键词: {WATCH_KEYWORDS if WATCH_KEYWORDS else 'ALL (全部推送)'}")
     print(f"运行模式: {args.mode}")
     print("----------------------------------------")
+    
+    evolution_check_counter = 0  # 进化检查计数器
     
     while True:
         try:
@@ -162,12 +176,25 @@ if __name__ == "__main__":
             else:
                 rate_limiter.record_result(False)
             
-            # 2. 模式判断
+            # 2. 权重进化检查（每10次循环检查一次）
+            evolution_check_counter += 1
+            if weight_evolver and evolution_check_counter >= 10:
+                evolution_check_counter = 0
+                should_evolve, reason = weight_evolver.should_evolve()
+                if should_evolve:
+                    print(f"\n🧬 触发权重进化: {reason}")
+                    new_weights = weight_evolver.evolve()
+                    # 更新审计引擎的动态权重
+                    if hasattr(audit_engine, 'dynamic_weights'):
+                        audit_engine.dynamic_weights = new_weights
+                    print("✅ 权重进化完成")
+            
+            # 3. 模式判断
             if args.mode == 'single_run':
                 print("\n✅ 单次运行模式完成, 退出程序。")
                 break
                 
-            # 3. 自适应休息
+            # 4. 自适应休息
             print(".", end="", flush=True)
             rate_limiter.wait()
             

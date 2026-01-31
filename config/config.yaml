@@ -39,3 +39,12 @@ recommendation:
   
 # 采集配置
 fetch_interval: 3600  # 秒
+
+# 权重进化配置
+weight_evolution:
+  enabled: true
+  min_samples: 30           # 最小样本量（T+3完成的新闻数）
+  accuracy_threshold: 0.55  # 准确率预警线（低于此值触发进化）
+  max_weight_change: 0.15   # 单次权重最大调整幅度
+  decay_factor: 0.9         # 旧权重衰减因子
+  cron_schedule: "0 2 * * 0"  # 每周日02:00保底执行
