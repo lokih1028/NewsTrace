@@ -244,3 +244,74 @@ class SourceRating:
                 return "可信度一般,需交叉验证"
         else:
             return "建议过滤,可信度低"
+    
+    def get_source_credibility(self, source_name: str) -> Dict:
+        """
+        获取信源可信度信息（供审计引擎使用）
+        
+        Args:
+            source_name: 信源名称
+            
+        Returns:
+            包含 grade, accuracy, rumor_rate, recommendation 的字典
+        """
+        try:
+            with self.db.get_connection() as conn:
+                cur = conn.cursor()
+                
+                if self.db.db_type == 'postgresql':
+                    cur.execute("""
+                        SELECT grade, accuracy, rumor_rate, recommendation, 
+                               avg_return, avg_logic_score
+                        FROM source_ratings
+                        WHERE source_name = %s
+                    """, (source_name,))
+                else:
+                    cur.execute("""
+                        SELECT grade, accuracy, rumor_rate, recommendation,
+                               avg_return, avg_logic_score
+                        FROM source_ratings
+                        WHERE source_name = ?
+                    """, (source_name,))
+                
+                row = cur.fetchone()
+                
+                if row:
+                    grade, accuracy, rumor_rate, recommendation, avg_return, avg_logic_score = row
+                    return {
+                        'source_name': source_name,
+                        'grade': grade,
+                        'accuracy': accuracy,
+                        'rumor_rate': rumor_rate,
+                        'avg_return': avg_return,
+                        'avg_logic_score': avg_logic_score,
+                        'recommendation': recommendation,
+                        'credibility_score': self._grade_to_score(grade)
+                    }
+                else:
+                    # 未知信源，返回默认中等可信度
+                    return {
+                        'source_name': source_name,
+                        'grade': 'C',
+                        'accuracy': 50.0,
+                        'rumor_rate': 15.0,
+                        'avg_return': 0.0,
+                        'avg_logic_score': 50.0,
+                        'recommendation': '首次出现信源，需验证',
+                        'credibility_score': 50
+                    }
+                    
+        except Exception as e:
+            logger.warning(f"获取信源可信度失败: {source_name} - {e}")
+            return {
+                'source_name': source_name,
+                'grade': 'C',
+                'accuracy': 50.0,
+                'credibility_score': 50,
+                'recommendation': '数据获取失败，默认中等可信度'
+            }
+    
+    def _grade_to_score(self, grade: str) -> int:
+        """将评级转换为数值分数"""
+        grade_scores = {'A': 90, 'B': 75, 'C': 55, 'D': 30}
+        return grade_scores.get(grade, 50)
