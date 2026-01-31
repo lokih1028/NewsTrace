@@ -231,7 +231,7 @@ class GeminiProvider(BaseLLMProvider):
     def __init__(
         self,
         api_key: str = None,
-        model: str = "gemini-2.0-flash",  # 使用稳定版本
+        model: str = "gemini-3-flash-preview",  # 使用最新Gemini 3预览版
         temperature: float = 0.3,
         max_tokens: int = 2000,
         thinking_level: str = "low"  # 新增: Gemini 3 思考等级 (high/low)

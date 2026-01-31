@@ -35,7 +35,7 @@ def test_gemini_api():
         
         provider = GeminiProvider(
             api_key=api_key,
-            model="gemini-2.0-flash",
+            model="gemini-3-flash-preview",
             temperature=0.3,
             max_tokens=2000
         )
