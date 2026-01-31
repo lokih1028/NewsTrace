@@ -63,7 +63,15 @@
       "code": "股票代码",
       "name": "股票名称",
       "logic": "推荐逻辑(必须引用新闻中的具体证据)",
-      "confidence": "高|中|低"
+      "confidence": "高|中|低",
+      "trading_plan": {{
+        "action": "买入|观望|卖出",
+        "entry_price_range": "建议入场价位区间(如: 18.5-19.2)",
+        "target_price": "目标价位(如: 22.0)",
+        "stop_loss_price": "止损价位(如: 17.5)",
+        "position_suggestion": "建议仓位占比(如: 5%-10%)",
+        "validity_period": "建议有效期(如: 3天内)"
+      }}
     }}
   ]
 }}
