@@ -3,12 +3,19 @@
   "title": "NewsTrace Audit Result Schema",
   "description": "NewsTrace AI语义审计结果的标准输出格式",
   "type": "object",
-  "required": ["audit_result", "recommended_tickers"],
+  "required": [
+    "audit_result",
+    "recommended_tickers"
+  ],
   "properties": {
     "audit_result": {
       "type": "object",
       "description": "审计结果主体",
-      "required": ["score", "risk_level", "warnings"],
+      "required": [
+        "score",
+        "risk_level",
+        "warnings"
+      ],
       "properties": {
         "score": {
           "type": "integer",
@@ -18,8 +25,21 @@
         },
         "risk_level": {
           "type": "string",
-          "enum": ["High", "Medium", "Low"],
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
           "description": "风险等级: High(高风险), Medium(中风险), Low(低风险)"
+        },
+        "news_category": {
+          "type": "string",
+          "enum": [
+            "bullish",
+            "bearish",
+            "neutral"
+          ],
+          "description": "新闻分类: bullish(利好), bearish(利空), neutral(中性)"
         },
         "warnings": {
           "type": "array",
@@ -34,11 +54,21 @@
           "description": "语义偏离详情",
           "items": {
             "type": "object",
-            "required": ["type", "original", "translated", "impact"],
+            "required": [
+              "type",
+              "original",
+              "translated",
+              "impact"
+            ],
             "properties": {
               "type": {
                 "type": "string",
-                "enum": ["情绪化修饰", "逻辑阉割", "建议变要求", "煽动性表达"],
+                "enum": [
+                  "情绪化修饰",
+                  "逻辑阉割",
+                  "建议变要求",
+                  "煽动性表达"
+                ],
                 "description": "偏离类型"
               },
               "original": {
@@ -65,7 +95,11 @@
       "maxItems": 3,
       "items": {
         "type": "object",
-        "required": ["code", "name", "logic"],
+        "required": [
+          "code",
+          "name",
+          "logic"
+        ],
         "properties": {
           "code": {
             "type": "string",
@@ -82,7 +116,10 @@
           },
           "beta": {
             "type": "string",
-            "enum": ["高贝塔", "低贝塔"],
+            "enum": [
+              "高贝塔",
+              "低贝塔"
+            ],
             "description": "波动属性: 高贝塔(波动大,弹性高) 或 低贝塔(波动小,稳健型)"
           }
         }

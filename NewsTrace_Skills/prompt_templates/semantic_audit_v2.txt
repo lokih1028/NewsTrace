@@ -42,8 +42,9 @@
 
 {{
   "audit_result": {{
-    "score": 0-100的整数,
+    "score": 0-100的整数 (逻辑严密性评分),
     "risk_level": "High|Medium|Low",
+    "news_category": "bullish|bearish|neutral",
     "one_sentence_conclusion": "30字以内,直接告诉投资者该做什么",
     "multi_angle_analysis": {{
       "optimistic": "乐观情境下的核心观点",

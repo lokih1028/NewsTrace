@@ -261,37 +261,38 @@ class AuditEngine:
     
     def _get_market_context(self) -> str:
         """
-        获取当前市场上下文描述（增强版：大盘+北向资金+涨停比）
-        使用 AkShare 免费API获取多维度市场数据
+        获取当前市场上下文描述（基于实时行情）
+        使用 AkShare 免费API获取大盘指数实时数据
         """
         try:
             import akshare as ak
             
-            # 1. 获取大盘指数实时行情
-            df_all = ak.stock_zh_index_spot_sina()
-            sh_price, sh_change, sz_price, sz_change = 0, 0, 0, 0
+            # 获取所有指数实时行情
+            df = ak.stock_zh_index_spot_em()
             
-            if df_all is not None and not df_all.empty:
-                df_sh = df_all[df_all['代码'] == 'sh000001']
-                df_sz = df_all[df_all['代码'] == 'sz399001']
+            if df is not None and not df.empty:
+                # 筛选上证指数（代码: 000001）
+                sh_data = df[df['代码'] == '000001']
+                # 筛选深证成指（代码: 399001）
+                sz_data = df[df['代码'] == '399001']
                 
-                if not df_sh.empty and not df_sz.empty:
-                    sh_price = float(df_sh.iloc[0]['最新价'])
-                    sh_change = float(df_sh.iloc[0]['涨跌幅'])
-                    sz_price = float(df_sz.iloc[0]['最新价'])
-                    sz_change = float(df_sz.iloc[0]['涨跌幅'])
-            
-            # 2. 获取北向资金数据
-            north_flow = self._get_north_flow()
-            
-            # 3. 获取涨停/跌停数据
-            zt_count, dt_count = self._get_limit_count()
-            
-            # 4. 生成综合市场描述
-            return self._generate_market_description(
-                sh_price, sh_change, sz_price, sz_change,
-                north_flow, zt_count, dt_count
-            )
+                if not sh_data.empty and not sz_data.empty:
+                    # 解析上证指数数据
+                    sh_price = float(sh_data.iloc[0]['最新价'])
+                    sh_change = float(sh_data.iloc[0]['涨跌幅'])
+                    
+                    # 解析深证成指数据
+                    sz_price = float(sz_data.iloc[0]['最新价'])
+                    sz_change = float(sz_data.iloc[0]['涨跌幅'])
+                    
+                    # 生成市场描述
+                    return self._generate_market_description(sh_price, sh_change, sz_price, sz_change)
+                else:
+                    logger.warning("未找到上证/深证指数数据，使用备用逻辑")
+                    return self._get_fallback_market_context()
+            else:
+                logger.warning("AkShare 返回空数据，使用备用逻辑")
+                return self._get_fallback_market_context()
                 
         except ImportError:
             logger.warning("akshare 未安装，使用备用市场描述")
@@ -640,6 +641,12 @@ class AuditEngine:
             logger.warning(f"无效的风险等级: {risk_level}, 已修正为Medium")
             result['audit_result']['risk_level'] = 'Medium'
         
+        # 验证新闻分类 (方案2 新增)
+        news_category = result['audit_result'].get('news_category', 'neutral')
+        if news_category not in ['bullish', 'bearish', 'neutral']:
+            logger.warning(f"无效的新闻分类: {news_category}, 已修正为neutral")
+            result['audit_result']['news_category'] = 'neutral'
+        
         # 限制推荐标的数量
         if len(result['recommended_tickers']) > 3:
             logger.warning(f"推荐标的过多: {len(result['recommended_tickers'])}, 已截取前3个")
@@ -650,10 +657,12 @@ class AuditEngine:
     def _get_fallback_result(self) -> Dict:
         """获取降级结果"""
         return {
-            'audit_result': {
-                'score': 50,
-                'risk_level': 'Medium',
-                'warnings': ['审计引擎不可用,使用降级结果']
+            "audit_result": {
+                "score": 50,
+                "risk_level": "Medium",
+                "news_category": "neutral",
+                "one_sentence_conclusion": "分析暂时不可用",
+                "warnings": ["系统负载较高或密钥配置错误"]
             },
-            'recommended_tickers': []
+            "recommended_tickers": []
         }

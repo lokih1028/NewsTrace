@@ -56,9 +56,11 @@ def run_audit_mode():
     from src.news_fetcher import NewsFetcher
     from src.audit_engine import AuditEngine
     from src.multi_channel_notifier import MultiChannelNotifier
+    from src.semantic_dedup import SemanticDeduplicator
     
     # 初始化组件
     fetcher = NewsFetcher({"provider": "akshare"})
+    deduplicator = SemanticDeduplicator(similarity_threshold=0.6)
     
     # 根据环境变量选择 LLM
     provider = os.getenv("LLM_PROVIDER", "gemini")
@@ -74,45 +76,51 @@ def run_audit_mode():
     auditor = AuditEngine(audit_config)
     notifier = MultiChannelNotifier()
     
-    # 获取关注关键词
-    keywords = get_watch_keywords()
-    logger.info(f"📋 关注关键词: {keywords}")
+    # 🆕 语义去重与事件聚合
+    event_groups = deduplicator.group_by_event(news_list)
+    logger.info(f"🔄 事件聚合: 原始新闻 {original_count} 条, 识别出 {len(event_groups)} 个独立事件")
     
-    # 采集新闻 (NewsFetcher.fetch() 不接受 limit 参数)
-    news_list = fetcher.fetch()
-    logger.info(f"📰 采集到 {len(news_list)} 条新闻")
-    
-    # 审计新闻
+    # 审计每个事件的代表性新闻
     results = []
     high_risk_news = []
     
-    for news in news_list:
+    for event_id, news_group in event_groups.items():
+        # 选取代表性新闻
+        representative_news = deduplicator.get_representative(news_group)
         try:
-            result = auditor.audit(news)
-            # 将新闻标题存入结果中以便在报告中显示
-            result['_news_title'] = news.get('title', '未知标题')
+            result = auditor.audit(representative_news)
+            result['_news_title'] = representative_news.get('title', '未知标题')
+            # 记录该事件包含的新闻数量
+            result['_event_count'] = len(news_group)
+            result['_other_titles'] = [n.get('title') for n in news_group if n != representative_news]
             results.append(result)
             
-            # 修复: 正确访问审计结果结构
             audit_result = result.get("audit_result", {})
             risk_level = audit_result.get("risk_level", "Medium")
             
             if risk_level in ["High", "high", "critical", "Critical"]:
                 high_risk_news.append({
-                    "title": news.get("title"),
+                    "title": representative_news.get("title"),
                     "risk_level": risk_level,
                     "score": audit_result.get("score", 50),
-                    "core_thesis": audit_result.get("core_thesis") or audit_result.get("one_sentence_conclusion", "N/A")
+                    "news_category": audit_result.get("news_category", "neutral"),
+                    "core_thesis": audit_result.get("core_thesis") or audit_result.get("one_sentence_conclusion", "N/A"),
+                    "event_count": len(news_group)
                 })
         except Exception as e:
             logger.error(f"审计失败: {e}")
     
-    logger.info(f"✅ 审计完成, 高风险新闻: {len(high_risk_news)} 条")
+    logger.info(f"✅ 审计完成, 识别独立事件: {len(results)} 个, 高风险预警: {len(high_risk_news)} 条")
     
-    # 修复: 始终生成报告,不管是否有高风险新闻
-    report = generate_daily_report(results, high_risk_news)
+    # 生成报告（传入去重统计信息）
+    dedup_stats = {
+        "original": original_count,
+        "unique": len(results),
+        "duplicates": original_count - len(results)
+    }
+    report = generate_daily_report(results, high_risk_news, dedup_stats)
     
-    # 始终推送日报 (包含分析结果概览)
+    # 推送日报
     if notifier.is_available():
         notifier.send(f"📊 NewsTrace 日报 {datetime.now().strftime('%Y-%m-%d')}", report)
         if high_risk_news:
@@ -120,7 +128,7 @@ def run_audit_mode():
         else:
             logger.info("📤 已推送日报 (今日无高风险新闻)")
     
-    # 保存报告 (始终保存)
+    # 保存报告
     report_path = f"data/reports/daily_{datetime.now().strftime('%Y%m%d')}.md"
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)
@@ -137,69 +145,134 @@ def run_tracking_mode():
     logger.info("✅ 追踪更新完成")
 
 
-def generate_daily_report(results, high_risk_news):
+def get_historical_stats():
+    """获取历史统计数据"""
+    try:
+        from src.database import Database
+        db = Database()
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            # 获取最近 50 条已完成追踪的记录
+            cursor.execute("""
+                SELECT 
+                    n.ai_audit_result,
+                    mt.price_t0,
+                    mt.price_t3
+                FROM market_tracking mt
+                JOIN news n ON mt.news_id = n.news_id
+                WHERE mt.price_t3 IS NOT NULL
+                ORDER BY mt.t3_timestamp DESC
+                LIMIT 50
+            """)
+            rows = cursor.fetchall()
+            if not rows:
+                return None
+                
+            correct = 0
+            for row in rows:
+                audit_result, t0, t3 = row
+                if isinstance(audit_result, str):
+                    audit_result = json.loads(audit_result)
+                
+                # 简单逻辑：看多且涨，看空且跌
+                category = audit_result.get("news_category", "neutral")
+                if t0 and t3:
+                    ret = (t3 - t0) / t0
+                    if category == "bullish" and ret > 0.005: correct += 1
+                    elif category == "bearish" and ret < -0.005: correct += 1
+                    elif category == "neutral" and abs(ret) <= 0.005: correct += 1
+            
+            return {
+                "accuracy": correct / len(rows),
+                "sample_count": len(rows)
+            }
+    except Exception:
+        return None
+
+
+def generate_daily_report(results, high_risk_news, dedup_stats=None):
     """生成每日报告"""
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+    stats = get_historical_stats()
+    
+    # 统计分类
+    category_counts = {"bullish": 0, "bearish": 0, "neutral": 0}
+    for r in results:
+        cat = r.get("audit_result", {}).get("news_category", "neutral")
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+
     report_lines = [
         f"# 📊 NewsTrace 每日分析报告",
         f"",
-        f"**日期**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"**日期**: {current_time}",
         f"",
         f"---",
         f"",
         f"## 📰 分析概览",
         f"",
-        f"- 审计新闻: {len(results)} 条",
-        f"- 高风险新闻: {len(high_risk_news)} 条",
-        f"",
     ]
+    
+    if dedup_stats:
+        report_lines.extend([
+            f"- 采集原始新闻: `{dedup_stats['original']}` 条",
+            f"- 识别独立事件: `{dedup_stats['unique']}` 个",
+            f"- 语义去重过滤: `{dedup_stats['duplicates']}` 条 (重复率: {dedup_stats['duplicates']/dedup_stats['original']:.1%})",
+            f"- 投资情绪分布: 🟢利好 `{category_counts['bullish']}` | 🔴利空 `{category_counts['bearish']}` | ⚪中性 `{category_counts['neutral']}`",
+        ])
+    
+    if stats:
+        report_lines.append(f"- **系统置信度**: `{(stats['accuracy']*100):.1f}%` (基于最近 {stats['sample_count']} 条历史回测)")
+    
+    report_lines.append("")
     
     if high_risk_news:
         report_lines.extend([
-            f"## ⚠️ 高风险新闻",
+            f"## ⚠️ 核心审计预警 (Top 5)",
             f""
         ])
         
         for i, news in enumerate(high_risk_news[:5], 1):
             emoji = "🔴" if news["risk_level"] in ["critical", "Critical"] else "🟠"
+            cat_emoji = "📈" if news["news_category"] == "bullish" else "📉" if news["news_category"] == "bearish" else "⚖️"
+            group_suffix = f" (由 {news['event_count']} 篇报道聚合)" if news['event_count'] > 1 else ""
+            
             report_lines.extend([
-                f"### {emoji} {i}. {news['title'][:50]}...",
+                f"### {emoji} {i}. {news['title']}{group_suffix}",
                 f"",
-                f"- **风险等级**: {news['risk_level']}",
-                f"- **评分**: {news['score']}",
+                f"- **态势**: `{news['news_category']}` {cat_emoji} | **逻辑评分**: `{news['score']}`",
                 f"- **核心论点**: {news.get('core_thesis', 'N/A')}",
                 f""
             ])
     else:
         report_lines.extend([
-            f"## ✅ 无高风险新闻",
+            f"## ✅ 安全状态",
             f"",
-            f"本次分析未发现高风险新闻,所有新闻风险等级均为 Medium 或 Low。",
+            f"本次分析未发现高风险预警事件，市场处于低合谋或低风险震荡状态。",
             f""
         ])
     
-    # 添加所有新闻的摘要
+    # 📋 所有新闻摘要
     report_lines.extend([
-        f"## 📋 所有分析新闻摘要",
+        f"## 📋 情报库摘要 (事件聚合)",
         f""
     ])
     
-    for i, result in enumerate(results[:10], 1):
+    for i, result in enumerate(results[:25], 1):
         audit_result = result.get("audit_result", {})
         risk_level = audit_result.get("risk_level", "Medium")
         score = audit_result.get("score", 50)
-        title = result.get("_news_title", "未知标题")[:40]
-        conclusion = audit_result.get("one_sentence_conclusion", "")[:50]
+        category = audit_result.get("news_category", "neutral")
+        title = result.get("_news_title", "未知标题")
+        event_count = result.get("_event_count", 1)
+        conclusion = audit_result.get("one_sentence_conclusion", "")
         
-        # 风险等级图标
-        if risk_level in ["High", "high", "Critical", "critical"]:
-            emoji = "🔴"
-        elif risk_level in ["Medium", "medium"]:
-            emoji = "🟡"
-        else:
-            emoji = "🟢"
+        # 风险/方向图标
+        risk_emoji = "🔴" if risk_level in ["High", "high", "Critical", "critical"] else "🟡"
+        cat_tag = "[利好]" if category == "bullish" else "[利空]" if category == "bearish" else "[中性]"
+        dup_tag = f" (+{event_count-1}篇重复)" if event_count > 1 else ""
         
-        report_lines.append(f"{i}. {emoji} **{title}**")
-        report_lines.append(f"   - 风险: {risk_level} | 评分: {score}")
+        report_lines.append(f"{i}. {risk_emoji} **{cat_tag} {title}**{dup_tag}")
+        report_lines.append(f"   - 风险: `{risk_level}` | 评分: `{score}`")
         if conclusion:
             report_lines.append(f"   - 💡 {conclusion}")
     
@@ -207,7 +280,7 @@ def generate_daily_report(results, high_risk_news):
         f"",
         f"---",
         f"",
-        f"*由 NewsTrace 自动生成*"
+        f"*由 NewsTrace 语义审计引擎自动生成 - [Data-Driven Trust]*"
     ])
     
     return "\n".join(report_lines)
